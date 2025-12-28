@@ -1,0 +1,566 @@
+// Prisma Schema for Konnect Platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum UserRole {
+  FOUNDER
+  DEVELOPER
+  STUDENT
+  MENTOR
+  INVESTOR
+  ADMIN
+}
+
+enum PostType {
+  IDEA
+  TASK
+  REQUEST
+  MENTORSHIP
+  FUNDING
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum FundingStage {
+  IDEA
+  PROTOTYPE
+  MVP
+  EARLY
+  GROWTH
+  SCALE
+}
+
+enum NotificationType {
+  MESSAGE
+  COMMENT
+  REACTION
+  MENTION
+  FOLLOW
+  APPLICATION
+  TASK_UPDATE
+  EVENT_INVITATION
+  SYSTEM
+}
+
+enum ResourceCategory {
+  LECTURE_SLIDES
+  LAB_SHEETS
+  PAST_PAPERS
+  NOTES
+  GITHUB_REPO
+  YOUTUBE_PLAYLIST
+  TUTORIAL
+  BOOK
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ============ MODELS ============
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String?
+  name              String
+  username          String?   @unique
+  avatar            String?
+  bio               String?
+  role              UserRole  @default(DEVELOPER)
+  skills            String[]  // Array of skills
+  interests         String[]
+  portfolio         String?   // URL to portfolio
+  githubUrl         String?
+  linkedinUrl       String?
+  websiteUrl        String?
+  
+  // Student specific
+  university        String?
+  faculty           String?
+  studentId         String?
+  studentIdVerified Boolean   @default(false)
+  graduationYear    Int?
+  
+  // Location
+  location          String?
+  city              String?
+  country           String    @default("Sri Lanka")
+  latitude          Float?
+  longitude         Float?
+  
+  // Status
+  isOnline          Boolean   @default(false)
+  lastSeen          DateTime  @default(now())
+  availableForWork  Boolean   @default(true)
+  
+  // Reputation
+  reputationScore   Int       @default(0)
+  trustScore        Float     @default(0.0)
+  
+  // OAuth
+  googleId          String?   @unique
+  githubId          String?   @unique
+  
+  // Verification
+  emailVerified     Boolean   @default(false)
+  emailVerifyToken  String?
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  posts             Post[]
+  comments          Comment[]
+  reactions         Reaction[]
+  sentMessages      Message[] @relation("SentMessages")
+  groupMemberships  GroupMember[]
+  notifications     Notification[]
+  followers         Follow[]  @relation("Followers")
+  following         Follow[]  @relation("Following")
+  bookmarks         Bookmark[]
+  applications      Application[]
+  events            Event[]
+  resources         Resource[]
+  payments          Payment[]
+  reviews           Review[]
+  
+  @@index([email])
+  @@index([username])
+  @@index([role])
+  @@index([city])
+  @@index([university])
+  @@map("users")
+}
+
+model Post {
+  id               String        @id @default(uuid())
+  title            String
+  description      String        @db.Text
+  type             PostType      @default(IDEA)
+  
+  // Startup specific
+  techStack        String[]
+  fundingStage     FundingStage?
+  budgetMin        Int?
+  budgetMax        Int?
+  teamSize         Int?
+  lookingFor       String[]      // ["Developer", "Designer", "Marketer"]
+  
+  // Task specific
+  taskStatus       TaskStatus    @default(OPEN)
+  deadline         DateTime?
+  isPaid           Boolean       @default(false)
+  compensation     Int?
+  
+  // Content
+  tags             String[]
+  category         String?
+  images           String[]
+  documents        String[]
+  
+  // Location
+  location         String?
+  city             String?
+  latitude         Float?
+  longitude        Float?
+  
+  // Engagement
+  viewCount        Int           @default(0)
+  applyCount       Int           @default(0)
+  
+  // Status
+  isActive         Boolean       @default(true)
+  isFeatured       Boolean       @default(false)
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  authorId         String
+  author           User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments         Comment[]
+  reactions        Reaction[]
+  bookmarks        Bookmark[]
+  applications     Application[]
+  
+  @@index([authorId])
+  @@index([type])
+  @@index([taskStatus])
+  @@index([city])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model Group {
+  id               String        @id @default(uuid())
+  name             String
+  description      String?       @db.Text
+  avatar           String?
+  coverImage       String?
+  
+  // Settings
+  isPrivate        Boolean       @default(false)
+  requiresApproval Boolean       @default(false)
+  
+  // Category
+  category         String?
+  tags             String[]
+  
+  // Location
+  location         String?
+  university       String?
+  
+  // Stats
+  memberCount      Int           @default(0)
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  members          GroupMember[]
+  messages         Message[]
+  
+  @@index([category])
+  @@index([university])
+  @@map("groups")
+}
+
+model GroupMember {
+  id               String        @id @default(uuid())
+  role             String        @default("member") // admin, moderator, member
+  joinedAt         DateTime      @default(now())
+  
+  // Relations
+  userId           String
+  groupId          String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group            Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
+  @@map("group_members")
+}
+
+model Message {
+  id               String        @id @default(uuid())
+  content          String        @db.Text
+  
+  // Message type
+  isGroupMessage   Boolean       @default(false)
+  replyToId        String?
+  replyTo          Message?      @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies          Message[]     @relation("MessageReplies")
+  
+  // Attachments
+  attachments      String[]
+  
+  // Read status
+  isRead           Boolean       @default(false)
+  readAt           DateTime?
+  
+  // Reactions
+  reactions        Json?         // {emoji: count}
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  senderId         String
+  sender           User          @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  
+  groupId          String?
+  group            Group?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@index([senderId])
+  @@index([groupId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model Comment {
+  id               String        @id @default(uuid())
+  content          String        @db.Text
+  
+  // Threading
+  parentId         String?
+  parent           Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies          Comment[]     @relation("CommentReplies")
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  authorId         String
+  author           User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  postId           String
+  post             Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  reactions        Reaction[]
+  
+  @@index([authorId])
+  @@index([postId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model Reaction {
+  id               String        @id @default(uuid())
+  type             String        // like, love, upvote, downvote
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  
+  // Relations
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  postId           String?
+  post             Post?         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  commentId        String?
+  comment          Comment?      @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, postId, type])
+  @@unique([userId, commentId, type])
+  @@index([userId])
+  @@index([postId])
+  @@index([commentId])
+  @@map("reactions")
+}
+
+model Notification {
+  id               String            @id @default(uuid())
+  type             NotificationType
+  title            String
+  message          String
+  link             String?
+  
+  // Status
+  isRead           Boolean           @default(false)
+  
+  // Timestamps
+  createdAt        DateTime          @default(now())
+  
+  // Relations
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Follow {
+  id               String        @id @default(uuid())
+  createdAt        DateTime      @default(now())
+  
+  // Relations
+  followerId       String
+  follower         User          @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  
+  followingId      String
+  following        User          @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model Bookmark {
+  id               String        @id @default(uuid())
+  createdAt        DateTime      @default(now())
+  
+  // Relations
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  postId           String
+  post             Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+  @@map("bookmarks")
+}
+
+model Application {
+  id               String        @id @default(uuid())
+  message          String        @db.Text
+  status           String        @default("pending") // pending, accepted, rejected
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  postId           String
+  post             Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([postId])
+  @@index([status])
+  @@map("applications")
+}
+
+model Resource {
+  id               String            @id @default(uuid())
+  title            String
+  description      String?           @db.Text
+  category         ResourceCategory
+  
+  // File info
+  fileUrl          String
+  fileType         String
+  fileSize         Int
+  
+  // Academic info
+  university       String
+  faculty          String?
+  course           String?
+  courseCode       String?
+  semester         Int?
+  subject          String?
+  year             Int?
+  
+  // External links
+  githubUrl        String?
+  youtubeUrl       String?
+  
+  // Engagement
+  downloadCount    Int               @default(0)
+  viewCount        Int               @default(0)
+  rating           Float             @default(0.0)
+  reviewCount      Int               @default(0)
+  
+  // Status
+  isApproved       Boolean           @default(false)
+  isFlagged        Boolean           @default(false)
+  
+  // Timestamps
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  
+  // Relations
+  uploaderId       String
+  uploader         User              @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  reviews          Review[]
+  
+  @@index([uploaderId])
+  @@index([university])
+  @@index([category])
+  @@index([courseCode])
+  @@map("resources")
+}
+
+model Review {
+  id               String        @id @default(uuid())
+  rating           Int           // 1-5
+  comment          String?       @db.Text
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  
+  // Relations
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  resourceId       String
+  resource         Resource      @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, resourceId])
+  @@index([resourceId])
+  @@map("reviews")
+}
+
+model Event {
+  id               String        @id @default(uuid())
+  title            String
+  description      String        @db.Text
+  
+  // Event details
+  startDate        DateTime
+  endDate          DateTime?
+  location         String?
+  venue            String?
+  isOnline         Boolean       @default(false)
+  meetingLink      String?
+  
+  // Event type
+  category         String?
+  tags             String[]
+  
+  // Capacity
+  maxAttendees     Int?
+  attendeeCount    Int           @default(0)
+  
+  // Images
+  coverImage       String?
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  organizerId      String
+  organizer        User          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  
+  @@index([organizerId])
+  @@index([startDate])
+  @@map("events")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  amount           Int           // in cents
+  currency         String        @default("LKR")
+  status           PaymentStatus @default(PENDING)
+  
+  // Stripe
+  stripePaymentId  String?       @unique
+  stripeCustomerId String?
+  
+  // Details
+  description      String?
+  metadata         Json?
+  
+  // Timestamps
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@map("payments")
+}
